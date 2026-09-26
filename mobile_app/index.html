@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>RoadShield AI - Autonomous Hazard Detection & Risk Scoring</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+    <!-- Local Offline ONNX Runtime Web Engine -->
+    <script src="ort.min.js"></script>
+    <!-- Mobile Engine (RiskScorer & HazardTracker) -->
+    <script src="mobile_engine.js"></script>
+    
+    <!-- Firebase SDK (Compat Version for Web JS) -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+
+    <!-- Leaflet.js (Free OpenStreetMap Fallback Engine) -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    
+    <!-- New RoadShield AI Modules -->
+    <script src="firebase-config.js"></script>
+    <script src="gps.js"></script>
+    <script src="hazard-logger.js"></script>
+    <script src="maps-dashboard.js"></script>
+
+    <link rel="stylesheet" href="app.css">
+</head>
+<body>
+    <div id="app" class="hud-container">
+        <!-- Top Mobile Header -->
+        <header class="hud-header">
+            <div class="brand-title">
+                <span class="pulse-icon"></span>
+                <h1>ROADSHIELD <span class="accent-text">AI</span></h1>
+            </div>
+            <div class="hud-status">
+                <span id="model-status" class="status-badge loading">Loading Model...</span>
+                <button id="btn-settings" class="icon-btn" title="Settings">⚙️</button>
+            </div>
+        </header>
+
+        <!-- Mode Navigation Tabs -->
+        <nav class="hud-nav">
+            <button class="nav-tab active" data-mode="dashcam">
+                <span class="tab-icon">📷</span> Dashcam Live
+            </button>
+            <button class="nav-tab" data-mode="video">
+                <span class="tab-icon">🎥</span> Video File
+            </button>
+            <button class="nav-tab" data-mode="images">
+                <span class="tab-icon">🖼️</span> Test Suite
+            </button>
+            <button class="nav-tab" data-mode="analytics">
+                <span class="tab-icon">📊</span> Analytics
+            </button>
+            <button class="nav-tab" data-mode="map">
+                <span class="tab-icon">🗺️</span> Hazard Map
+            </button>
+        </nav>
+
+        <!-- Main Workspace Body -->
+        <main class="hud-main">
+            <!-- 1. DASHCAM LIVE VIEW -->
+            <section id="view-dashcam" class="view-panel active">
+                <div class="viewport-card">
+                    <div class="viewport-overlay-top">
+                        <div class="metric-pill">FPS: <span id="fps-counter">0</span></div>
+                        <div class="metric-pill">Hazards: <span id="active-hazard-count">0</span></div>
+                        <div class="metric-pill risk-pill" id="max-risk-badge">SAFE</div>
+                        <div id="gps-status-pill" class="metric-pill gps-pill disabled">📡 <span id="gps-coords-text">GPS Off</span></div>
+                    </div>
+
+                    <div class="video-container">
+                        <video id="webcam-video" autoplay playsinline muted></video>
+                        <canvas id="dashcam-canvas"></canvas>
+                        <div id="camera-placeholder" class="placeholder-overlay">
+                            <span class="placeholder-icon">📹</span>
+                            <p>Tap "Start Camera" to initiate Dashcam HUD</p>
+                            <button id="btn-start-camera" class="btn-primary">Start Dashcam</button>
+                        </div>
+                    </div>
+
+                    <div class="camera-controls">
+                        <select id="camera-select" class="select-input" title="Select Camera Source">
+                            <option value="">Detecting Cameras...</option>
+                        </select>
+                        <button id="btn-toggle-camera" class="btn-secondary" disabled>Switch Camera 🔄</button>
+                        <button id="btn-pause-camera" class="btn-secondary" disabled>Pause Feed ⏸️</button>
+                    </div>
+                </div>
+
+                <!-- Real-time Alerts Feed -->
+                <div class="alerts-feed-card">
+                    <h3>⚡ Live Hazard Alert Log</h3>
+                    <div id="live-alerts-list" class="alerts-list">
+                        <div class="alert-empty">No hazards detected in current feed</div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 2. VIDEO PROCESSOR VIEW -->
+            <section id="view-video" class="view-panel">
+                <div class="viewport-card">
+                    <div class="file-picker-box">
+                        <label for="input-video-file" class="file-drop-zone">
+                            <span class="drop-icon">📁</span>
+                            <p>Tap to Select Roadside Video (.mp4, .webm)</p>
+                            <input type="file" id="input-video-file" accept="video/*" hidden>
+                        </label>
+                    </div>
+
+                    <div class="video-container">
+                        <video id="file-video" controls playsinline muted></video>
+                        <canvas id="video-canvas"></canvas>
+                    </div>
+
+                    <div class="video-action-bar">
+                        <button id="btn-process-video" class="btn-primary" disabled>Process Video AI 🚀</button>
+                        <button id="btn-stop-video" class="btn-secondary" disabled>Stop ⏹️</button>
+                    </div>
+                    <div class="progress-bar-container">
+                        <div id="video-progress" class="progress-bar" style="width: 0%;"></div>
+                    </div>
+                </div>
+
+                <div class="alerts-feed-card">
+                    <h3>🎥 Video Analysis Log</h3>
+                    <div id="video-alerts-list" class="alerts-list">
+                        <div class="alert-empty">Upload a video file to begin automated processing</div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 3. TEST IMAGE SUITE VIEW -->
+            <section id="view-images" class="view-panel">
+                <div class="suite-card">
+                    <h3>🖼️ Sample Roadside Test Suite</h3>
+                    <p class="subtext">Select sample images or upload roadside photos to verify inference & risk scoring.</p>
+                    
+                    <div class="sample-grid" id="sample-grid">
+                        <!-- Loaded dynamically via JS -->
+                    </div>
+
+                    <div class="custom-upload-section">
+                        <label for="input-image-file" class="btn-secondary upload-btn">
+                            📤 Upload Custom Image
+                            <input type="file" id="input-image-file" accept="image/*" hidden>
+                        </label>
+                    </div>
+
+                    <div class="image-preview-container">
+                        <canvas id="image-canvas"></canvas>
+                    </div>
+
+                    <div id="image-summary-box" class="summary-box">
+                        <h4>📊 Detections Summary</h4>
+                        <div id="image-detections-table" class="detections-table">
+                            <div class="table-empty">Select or upload an image to see detection details</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 4. RISK ANALYTICS VIEW -->
+            <section id="view-analytics" class="view-panel">
+                <div class="analytics-grid">
+                    <div class="stat-card critical">
+                        <div class="stat-value" id="count-critical">0</div>
+                        <div class="stat-label">CRITICAL (Risk ≥ 7.5)</div>
+                    </div>
+                    <div class="stat-card high">
+                        <div class="stat-value" id="count-high">0</div>
+                        <div class="stat-label">HIGH (Risk ≥ 5.0)</div>
+                    </div>
+                    <div class="stat-card medium">
+                        <div class="stat-value" id="count-medium">0</div>
+                        <div class="stat-label">MEDIUM (Risk ≥ 2.5)</div>
+                    </div>
+                    <div class="stat-card low">
+                        <div class="stat-value" id="count-low">0</div>
+                        <div class="stat-label">LOW (Risk &lt; 2.5)</div>
+                    </div>
+                </div>
+
+                <div class="analytics-card">
+                    <h3>📈 Hazard Distribution by Severity</h3>
+                    <div class="distribution-bars">
+                        <div class="dist-row">
+                            <span>Open Manhole (10.0)</span>
+                            <div class="bar-outer"><div id="bar-open_manhole" class="bar-inner" style="width:0%"></div></div>
+                            <span id="num-open_manhole">0</span>
+                        </div>
+                        <div class="dist-row">
+                            <span>Pothole (6.0)</span>
+                            <div class="bar-outer"><div id="bar-pothole" class="bar-inner" style="width:0%"></div></div>
+                            <span id="num-pothole">0</span>
+                        </div>
+                        <div class="dist-row">
+                            <span>Debris (5.5)</span>
+                            <div class="bar-outer"><div id="bar-debris" class="bar-inner" style="width:0%"></div></div>
+                            <span id="num-debris">0</span>
+                        </div>
+                        <div class="dist-row">
+                            <span>Unmarked Bump (5.0)</span>
+                            <div class="bar-outer"><div id="bar-unmarked_bump" class="bar-inner" style="width:0%"></div></div>
+                            <span id="num-unmarked_bump">0</span>
+                        </div>
+                        <div class="dist-row">
+                            <span>Manhole (3.0)</span>
+                            <div class="bar-outer"><div id="bar-manhole" class="bar-inner" style="width:0%"></div></div>
+                            <span id="num-manhole">0</span>
+                        </div>
+                        <div class="dist-row">
+                            <span>Crack (2.5)</span>
+                            <div class="bar-outer"><div id="bar-crack" class="bar-inner" style="width:0%"></div></div>
+                            <span id="num-crack">0</span>
+                        </div>
+                        <div class="dist-row">
+                            <span>Speed Bump (2.0)</span>
+                            <div class="bar-outer"><div id="bar-speed_bump" class="bar-inner" style="width:0%"></div></div>
+                            <span id="num-speed_bump">0</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="analytics-card">
+                    <div class="card-header-flex">
+                        <h3>📋 Complete Session Hazard Log</h3>
+                        <button id="btn-export-log" class="btn-secondary">Export Log JSON 📥</button>
+                    </div>
+                    <div id="full-session-log" class="log-history-list">
+                        <div class="alert-empty">No alerts recorded in this session yet.</div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 5. GOOGLE MAPS HAZARD DASHBOARD VIEW -->
+            <section id="view-map" class="view-panel">
+                <div class="map-card">
+                    <div class="map-header-flex">
+                        <h3>🗺️ Live GIS Hazard Map</h3>
+                        <div class="map-stats-badge">Showing <span id="map-marker-count">0</span> Hazards</div>
+                    </div>
+                    <p class="subtext">Real-time geospatial map plotting verified hazards logged to Cloud Firestore.</p>
+
+                    <!-- Filter Controls Bar -->
+                    <div class="map-filter-bar">
+                        <div class="filter-group">
+                            <label for="filter-map-class">Hazard Type:</label>
+                            <select id="filter-map-class" class="select-input">
+                                <option value="all">All Classes</option>
+                                <option value="open_manhole">Open Manhole</option>
+                                <option value="manhole">Manhole</option>
+                                <option value="pothole">Pothole</option>
+                                <option value="crack">Crack</option>
+                                <option value="debris">Debris</option>
+                                <option value="speed_bump">Speed Bump</option>
+                                <option value="unmarked_bump">Unmarked Bump</option>
+                            </select>
+                        </div>
+
+                        <div class="filter-group">
+                            <label for="filter-map-level">Risk Level:</label>
+                            <select id="filter-map-level" class="select-input">
+                                <option value="all">All Levels</option>
+                                <option value="CRITICAL">Critical (≥ 7.5)</option>
+                                <option value="HIGH">High (≥ 5.0)</option>
+                                <option value="MEDIUM">Medium (≥ 2.5)</option>
+                                <option value="LOW">Low (&lt; 2.5)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Map Container -->
+                    <div id="google-map-container" class="google-map-box">
+                        <div class="map-placeholder">
+                            <span class="placeholder-icon">🗺️</span>
+                            <p>Loading Interactive Google Maps...</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- Settings Modal Drawer -->
+        <div id="modal-settings" class="modal-overlay">
+            <div class="modal-card">
+                <div class="modal-header">
+                    <h2>⚙️ AI Detection Settings</h2>
+                    <button id="btn-close-settings" class="icon-btn">✖</button>
+                </div>
+                <div class="modal-body">
+                    <div class="setting-item">
+                        <label>Confidence Threshold: <span id="val-conf">0.35</span></label>
+                        <input type="range" id="slider-conf" min="0.10" max="0.90" step="0.05" value="0.35">
+                    </div>
+                    <div class="setting-item">
+                        <label>IoU Tracker Threshold: <span id="val-iou">0.30</span></label>
+                        <input type="range" id="slider-iou" min="0.10" max="0.80" step="0.05" value="0.30">
+                    </div>
+                    <div class="setting-item">
+                        <label for="modal-camera-select">Camera Source 📹</label>
+                        <select id="modal-camera-select" class="select-input">
+                            <option value="">Detecting Cameras...</option>
+                        </select>
+                    </div>
+                    <div class="setting-item switch-item">
+                        <label>Audio Hazard Warnings 🔊</label>
+                        <input type="checkbox" id="chk-audio" checked>
+                    </div>
+                    <div class="setting-item switch-item">
+                        <label>Low-Power GPU Mode</label>
+                        <input type="checkbox" id="chk-lowpower">
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

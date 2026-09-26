@@ -1,0 +1,26 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Hazards Collection Security Rules
+    match /hazards/{hazardId} {
+      // Allow public read access so the Google Maps Hazard Dashboard can display markers for all users
+      allow read: if true;
+      
+      // Restrict writes to ensure valid hazard schema and prevent spam/malicious payload insertion
+      allow create: if request.resource.data.class_name in ['open_manhole', 'manhole', 'pothole', 'crack', 'debris', 'speed_bump', 'unmarked_bump']
+                   && request.resource.data.confidence >= 0.1
+                   && request.resource.data.risk_score >= 0.0
+                   && request.resource.data.risk_score <= 10.0
+                   && request.resource.data.latitude is number
+                   && request.resource.data.longitude is number;
+                   
+      // Allow update for deduplication (incrementing times_detected & updating last_seen)
+      allow update: if request.resource.data.times_detected >= resource.data.times_detected
+                   && request.resource.data.class_name == resource.data.class_name;
+                   
+      // Prevent unauthorized deletion of reported hazards
+      allow delete: if false;
+    }
+  }
+}

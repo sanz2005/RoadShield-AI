@@ -1,0 +1,16 @@
+names:
+- Manhole
+- Open Manhole
+- Pothole
+- Speed Bump
+- Unmarked Bump
+nc: 5
+roboflow:
+  license: CC BY 4.0
+  project: road-defects-yrflc-5sgqq
+  url: https://universe.roboflow.com/sanz-zukjs/road-defects-yrflc-5sgqq/dataset/1
+  version: 1
+  workspace: sanz-zukjs
+test: ../test/images
+train: ../train/images
+val: ../valid/images

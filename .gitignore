@@ -1,0 +1,25 @@
+# Python environment & cache
+hazard-env/
+__pycache__/
+*.pyc
+*.pyo
+
+# Build tool binaries & SDKs
+android_builder/
+android_project/.gradle/
+android_project/app/build/
+.gradle/
+
+# Heavy Datasets (Keep code clean)
+datasets/
+merged_dataset/
+
+# Output runs & checkpoints (Except final exported ONNX model in mobile_app/assets/)
+runs/
+inference_outputs/
+
+# IDE / System files
+.vscode/
+.idea/
+*.swp
+.DS_Store
